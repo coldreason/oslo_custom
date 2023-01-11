@@ -10,7 +10,7 @@ from typing import Callable, Optional, Union
 import numpy as np
 import torch
 import torch.distributed as dist
-from transformers import cached_path
+from file_utils import cached_path
 from transformers.modeling_utils import get_parameter_dtype, unwrap_model
 
 from oslo.parallelism.engine_deployment import DeploymentParallelEngine
