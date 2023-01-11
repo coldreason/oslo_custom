@@ -53,7 +53,7 @@ class NumpyUtils(object):
         3: np.int16,
         4: np.int32,
         5: np.int64,
-        6: np.float,
+        6: float,
         7: np.double,
         8: np.uint16,
     }
@@ -64,7 +64,7 @@ class NumpyUtils(object):
         np.int16: 3,
         np.int32: 4,
         np.int64: 5,
-        np.float: 6,
+        float: 6,
         np.double: 7,
         np.uint16: 8,
     }
@@ -74,7 +74,7 @@ class NumpyUtils(object):
         np.int16: 2,
         np.int32: 4,
         np.int64: 8,
-        np.float: 4,
+        float: 4,
         np.double: 8,
     }
 
