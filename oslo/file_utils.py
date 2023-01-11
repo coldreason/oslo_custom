@@ -942,8 +942,6 @@ def is_tensor(x):
     return isinstance(x, np.ndarray)
 
 
-
-[DOCS]
 class ModelOutput(OrderedDict):
     """
     Base class for all model outputs as dataclass. Has a ``__getitem__`` that allows indexing by integer or slice (like
