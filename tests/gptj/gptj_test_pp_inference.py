@@ -152,7 +152,7 @@ class TestPPInference:
 
 
 if __name__ == "__main__":
-    test = TestPPInference(num_gpus=4)
+    test = TestPPInference(num_gpus=1)
 
     for fp16 in [False, True]:
         test.test_gptj_model(fp16=fp16)
