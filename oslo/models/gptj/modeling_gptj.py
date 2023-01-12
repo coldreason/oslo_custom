@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """ PyTorch GPT-J model. """
+DEVICE = "cuda"
 
 from typing import Tuple
 
@@ -104,10 +105,10 @@ class GPTJAttention(nn.Module):
             torch.tensor(self.head_dim, dtype=torch.float32)
         ).to(torch.get_default_dtype())
 
-        self.k_proj = nn.Linear(self.embed_dim, self.embed_dim, bias=False)
-        self.v_proj = nn.Linear(self.embed_dim, self.embed_dim, bias=False)
-        self.q_proj = nn.Linear(self.embed_dim, self.embed_dim, bias=False)
-        self.out_proj = nn.Linear(self.embed_dim, self.embed_dim, bias=False)
+        self.k_proj = nn.Linear(self.embed_dim, self.embed_dim, bias=False).to(DEVICE)
+        self.v_proj = nn.Linear(self.embed_dim, self.embed_dim, bias=False).to(DEVICE)
+        self.q_proj = nn.Linear(self.embed_dim, self.embed_dim, bias=False).to(DEVICE)
+        self.out_proj = nn.Linear(self.embed_dim, self.embed_dim, bias=False).to(DEVICE)
         self.rotary_dim = None
         if config.rotary_dim is not None:
             self.rotary_dim = config.rotary_dim
@@ -167,9 +168,9 @@ class GPTJAttention(nn.Module):
         query = query.to(torch.float32)
         key = key.to(torch.float32)
 
-        attn_weights = torch.matmul(query, key.transpose(-1, -2))
+        attn_weights = torch.matmul(query, key.transpose(-1, -2)).to(DEVICE)
         attn_weights = torch.where(
-            causal_mask, attn_weights, self.masked_bias.to(attn_weights.dtype)
+            causal_mask.to(DEVICE), attn_weights, self.masked_bias.to(attn_weights.dtype).to(DEVICE)
         )
 
         attn_weights = attn_weights / self.scale_attn
@@ -272,17 +273,17 @@ class GPTJMLP(nn.Module):
         super().__init__()
         embed_dim = config.n_embd
 
-        self.fc_in = nn.Linear(embed_dim, intermediate_size)
-        self.fc_out = nn.Linear(intermediate_size, embed_dim)
+        self.fc_in = nn.Linear(embed_dim, intermediate_size).to(DEVICE)
+        self.fc_out = nn.Linear(intermediate_size, embed_dim).to(DEVICE)
 
         self.act = ACT2FN[config.activation_function]
-        self.dropout = nn.Dropout(config.resid_pdrop)
+        self.dropout = nn.Dropout(config.resid_pdrop).to(DEVICE)
 
     def forward(self, hidden_states):
-        hidden_states = self.fc_in(hidden_states)
-        hidden_states = self.act(hidden_states)
-        hidden_states = self.fc_out(hidden_states)
-        hidden_states = self.dropout(hidden_states)
+        hidden_states = self.fc_in(hidden_states.to(DEVICE))
+        hidden_states = self.act(hidden_states.to(DEVICE))
+        hidden_states = self.fc_out(hidden_states.to(DEVICE))
+        hidden_states = self.dropout(hidden_states.to(DEVICE))
         return hidden_states
 
 
@@ -303,7 +304,9 @@ class GPTJBlock(nn.Module):
         use_cache=False,
         output_attentions=False,
     ):
-        residual = hidden_states
+        residual = hidden_states.to(DEVICE)
+        self.ln_1 = self.ln_1.to(DEVICE)
+        hidden_states = hidden_states.to(DEVICE) 
         hidden_states = self.ln_1(hidden_states)
         attn_outputs = self.attn(
             hidden_states,
@@ -376,10 +379,10 @@ class GPTJModel(GPTJPreTrainedModel):
 
         self.embed_dim = config.n_embd
         self.vocab_size = config.vocab_size
-        self.wte = nn.Embedding(config.vocab_size, self.embed_dim)
-        self.drop = nn.Dropout(config.embd_pdrop)
-        self.h = nn.ModuleList([GPTJBlock(config) for _ in range(config.n_layer)])
-        self.ln_f = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_epsilon)
+        self.wte = nn.Embedding(config.vocab_size, self.embed_dim).to(DEVICE)
+        self.drop = nn.Dropout(config.embd_pdrop).to(DEVICE)
+        self.h = nn.ModuleList([GPTJBlock(config) for _ in range(config.n_layer)]).to(DEVICE)
+        self.ln_f = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_epsilon).to(DEVICE)
 
         self.gradient_checkpointing = False
 
@@ -406,16 +409,20 @@ class GPTJModel(GPTJPreTrainedModel):
         return_dict=None,
         **kwargs,
     ):
+
+    
         output_attentions = (
             output_attentions
             if output_attentions is not None
             else self.config.output_attentions
         )
+
         output_hidden_states = (
             output_hidden_states
             if output_hidden_states is not None
             else self.config.output_hidden_states
         )
+        
         use_cache = use_cache if use_cache is not None else self.config.use_cache
         return_dict = (
             return_dict if return_dict is not None else self.config.use_return_dict
@@ -458,6 +465,7 @@ class GPTJModel(GPTJPreTrainedModel):
             )
             position_ids = position_ids.unsqueeze(0).view(-1, input_shape[-1])
 
+
         # Attention mask.
         if attention_mask is not None:
             assert batch_size > 0, "batch_size has to be defined and > 0"
@@ -484,10 +492,7 @@ class GPTJModel(GPTJPreTrainedModel):
         head_mask = self.get_head_mask(head_mask, self.config.n_layer)
 
         if inputs_embeds is None:
-            if(input_ids.is_cuda):
-                print("input_ids are in cuda")
-            else:
-                input_ids.cuda()
+            self.wte.weight = nn.Parameter(self.wte.weight.to(DEVICE))
             inputs_embeds = self.wte(input_ids)
 
         hidden_states = inputs_embeds
@@ -697,7 +702,7 @@ class GPTJForCausalLM(GPTJPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.transformer = GPTJModel(config)
-        self.lm_head = nn.Linear(config.n_embd, config.vocab_size)
+        self.lm_head = nn.Linear(config.n_embd, config.vocab_size).to(DEVICE)
 
         self.init_weights()
 
@@ -747,7 +752,7 @@ class GPTJForCausalLM(GPTJPreTrainedModel):
 
     def head_fn(self, *args, **kwargs):
         hidden_states = kwargs.get("hidden_states", None)
-        kwargs["lm_logits"] = self.lm_head(hidden_states)
+        kwargs["lm_logits"] = self.lm_head(hidden_states.to(DEVICE)).to(DEVICE)
         return kwargs
 
     def loss_fn(self, *args, **kwargs):
@@ -829,7 +834,7 @@ class GPTJForSequenceClassification(GPTJPreTrainedModel):
         super().__init__(config)
         self.num_labels = config.num_labels
         self.transformer = GPTJModel(config)
-        self.score = nn.Linear(config.n_embd, self.num_labels, bias=False)
+        self.score = nn.Linear(config.n_embd, self.num_labels, bias=False).to(DEVICE)
 
         self.init_weights()
 

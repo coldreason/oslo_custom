@@ -4,6 +4,8 @@ import torch
 import torch.distributed as dist
 from transformers import GPT2Tokenizer
 
+from torchgpipe import GPipe
+
 from oslo.models.gptj.modeling_gptj import (
     GPTJForCausalLM,
     GPTJForSequenceClassification,
@@ -14,7 +16,9 @@ from oslo.models.gptj.modeling_gptj import (
 class TestPPInference:
     def __init__(self, num_gpus):
         self.num_gpus = num_gpus
-        self.tokenizer = GPT2Tokenizer.from_pretrained("anton-l/gpt-j-tiny-random")
+        self.tokenizer = GPT2Tokenizer.from_pretrained(
+             "anton-l/gpt-j-tiny-random"
+        )
 
     @torch.no_grad()
     def test_gptj_model(self, fp16):
@@ -26,14 +30,18 @@ class TestPPInference:
 
         if fp16:
             model_1d = (
-                GPTJModel.from_pretrained_with_parallel("anton-l/gpt-j-tiny-random")
+                GPTJModel.from_pretrained_with_parallel("anton-l/gpt-j-tiny-random",
+            pipeline_parallel_size=self.num_gpus,
+            torch_dtype=torch.float16 if fp16 else torch.float32,)
                 .half()
                 .eval()
                 .cuda()
             )
         else:
             model_1d = (
-                GPTJModel.from_pretrained_with_parallel("anton-l/gpt-j-tiny-random")
+                GPTJModel.from_pretrained_with_parallel("anton-l/gpt-j-tiny-random",
+            pipeline_parallel_size=self.num_gpus,
+            torch_dtype=torch.float16 if fp16 else torch.float32,)
                 .eval()
                 .cuda()
             )
@@ -41,9 +49,15 @@ class TestPPInference:
         batch_encoding = self.tokenizer(
             text="Hello I am Kevin. Today,", return_tensors="pt"
         ).to("cuda")
-
-        hidden_pp = [_.last_hidden_state for _ in model_pp(**batch_encoding)][0]
+        print(batch_encoding)
+        print(batch_encoding['input_ids'])
+        
+        hidden_pp = [_.last_hidden_state for _ in [model_pp(**batch_encoding)]][0]
         hidden_1d = model_1d(**batch_encoding).last_hidden_state
+
+        print("----------------------------")
+        print(type(hidden_pp))
+        print(type(hidden_1d))
 
         if dist.get_rank() == 0:
             print(
@@ -136,10 +150,11 @@ class TestPPInference:
         ).to("cuda")
 
         output_pp = torch.cat(
-            [_.logits.argmax(-1) for _ in model_pp(**batch_encoding)], dim=0
+            [_.logits.argmax(-1) for _ in [model_pp(**batch_encoding)]], dim=0
         )
-        output_1d = model_1d(**batch_encoding).logits.argmax(-1)
 
+        output_1d = model_1d(**batch_encoding).logits.argmax(-1)
+        
         if dist.get_rank() == 0:
             print(
                 f"\n{TestPPInference.__qualname__}:\n"
@@ -153,7 +168,6 @@ class TestPPInference:
 
 if __name__ == "__main__":
     test = TestPPInference(num_gpus=1)
-
     for fp16 in [False, True]:
         test.test_gptj_model(fp16=fp16)
     for fp16 in [False, True]:

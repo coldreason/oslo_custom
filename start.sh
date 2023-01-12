@@ -1,4 +1,5 @@
 #!/bin/sh
+pip uninstall oslo-core
 python setup.py build
 python setup.py install
 
